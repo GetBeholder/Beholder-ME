@@ -1414,7 +1414,7 @@ export function renderDollPanel(state, activeName, updatedNames, view) {
         // empty view; the muted name + caption + hidden view controls are styled
         // via [data-empty] in style.css. The first AI message / "Build from
         // history" replaces this with real state.
-        const doll = renderCharacterDoll('—', { species: 'human' }, view, { placeholder: true });
+        const doll = renderCharacterDoll('—', {}, view, { placeholder: true });
         return {
             html: `${doll}<p class="bh-placeholder-note">Showing a <b>default human</b> — nothing's tracked yet. It fills in as the scene plays out.</p>`,
             activeName: null,

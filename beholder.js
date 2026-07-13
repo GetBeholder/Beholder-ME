@@ -10747,7 +10747,7 @@
     view = view === "back" ? "back" : "front";
     const names = Object.keys(state || {});
     if (!names.length) {
-      const doll2 = renderCharacterDoll("\u2014", { species: "human" }, view, { placeholder: true });
+      const doll2 = renderCharacterDoll("\u2014", {}, view, { placeholder: true });
       return {
         html: `${doll2}<p class="bh-placeholder-note">Showing a <b>default human</b> \u2014 nothing's tracked yet. It fills in as the scene plays out.</p>`,
         activeName: null
@@ -15752,7 +15752,7 @@ ${canonical}`);
   }
   var SEED_KEY = "__seed__";
   var SEED_CHUNK_MAX = 2e3;
-  var APPEARANCE_RE = /\b(wear|wears|wearing|worn|dress|dressed|clad|clothe|clothing|clothes|outfit|attire|garb|robe|robes|shirt|blouse|tunic|trouser|trousers|pants|jeans|leggings|skirt|gown|coat|cloak|jacket|blazer|vest|hoodie|sweater|boot|boots|shoe|shoes|sandal|heel|heels|sock|glove|gloves|gauntlet|belt|sash|holster|hat|cap|hood|helmet|scarf|tie|collar|sleeve|sleeves|armor|armour|corset|bra|underwear|lingerie|barefoot|shirtless|topless|naked|nude|eyepatch|patch|monocle|glasses|goggles|earring|necklace|scar|scars|missing|stump|amput|prosthetic|bare)\b/i;
+  var APPEARANCE_RE = /\b(wear|wears|wearing|worn|dress|dressed|clad|clothe|clothing|clothes|outfit|attire|garb|robe|robes|shirt|blouse|tunic|trouser|trousers|pants|jeans|leggings|skirt|gown|coat|cloak|jacket|blazer|vest|hoodie|sweater|boot|boots|shoe|shoes|sandal|heel|heels|sock|glove|gloves|gauntlet|belt|sash|holster|hat|cap|hood|helmet|scarf|tie|collar|sleeve|sleeves|armor|armour|corset|bra|underwear|lingerie|barefoot|shirtless|topless|naked|nude|eyepatch|patch|monocle|glasses|goggles|earring|necklace|scar|scars|missing|stump|amput|prosthetic|bare|species|humanoid|anthro|creature|monster|beast|demon|demonic|angel|angelic|vampire|werewolf|lycan|lamia|naga|mermaid|merfolk|siren|succubus|incubus|elf|elven|elvish|orc|orcish|goblin|dwarf|dwarven|fae|fairy|fairies|nymph|kitsune|neko|catgirl|catboy|kobold|dragon|dragonborn|draconic|drake|wyvern|gargoyle|golem|android|robot|cyborg|automaton|undead|zombie|skeleton|ghost|wraith|spirit|slime|tail|tails|horn|horns|wing|wings|fang|fangs|claw|claws|talon|talons|scale|scales|scaly|fur|furry|hoof|hooves|paw|paws|snout|muzzle|mane|feather|feathers|gill|gills|fin|fins|tentacle|tentacles|antenna|antennae|pointed ears|pointy ears)\b/i;
   function appearanceChunks(text, maxChars = SEED_CHUNK_MAX) {
     const t = (text || "").trim();
     if (!t) return [];
