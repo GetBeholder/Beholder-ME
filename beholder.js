@@ -6466,15 +6466,15 @@
 .bh-char-species {
     font-family: var(--bh-font-data);
     font-size: var(--bh-text-secondary);
-    font-weight: 500;
-    color: var(--bh-body);
-    opacity: var(--bh-mute-soft);
+    font-weight: 600;
+    color: var(--primary, var(--bh-body));
+    opacity: 1;
     letter-spacing: 0.08em;
     text-transform: lowercase;
     padding: 1px var(--bh-space-2);
-    border: 1px solid var(--bh-divider);
+    border: 1px solid color-mix(in srgb, var(--primary, var(--bh-divider)) 45%, transparent);
     border-radius: 3px;
-    background: var(--bh-surface-1);
+    background: color-mix(in srgb, var(--primary, var(--bh-surface-1)) 12%, transparent);
 }
 /* v0.4 (2026-06-03): \`bh-char-gender\` rules removed along with the gender
    field. The wings rules below are kept defensively in case a v0.5+ state
@@ -15476,12 +15476,16 @@ ${canonical}`);
         const r = bodyPartList(bare, posLow);
         clauses.push({ kind: "plain", text: r.text + " " + (r.plural ? "are" : "is") + " bare" });
       }
-      if (!clauses.length) continue;
+      const sp = entry && typeof entry.species === "string" ? entry.species.trim() : "";
+      const showSpecies = sp && !/^(humans?|persons?|people|man|woman|men|women|boys?|girls?|guys?|lady|male|female)$/i.test(sp);
+      if (!clauses.length && !showSpecies) continue;
       const rendered = clauses.map((c, i) => {
         if (c.kind === "plain") return i === 0 ? cap(c.text) : c.text;
         return i === 0 ? Subj + " " + c.text : subjPron + " " + c.text;
       });
-      out.push(rendered.join("; ") + ".");
+      const speciesSentence = showSpecies ? `${Subj} ${isSelf ? "are" : "is"} a ${sp}.` : "";
+      const bodySentence = rendered.length ? rendered.join("; ") + "." : "";
+      out.push([speciesSentence, bodySentence].filter(Boolean).join(" "));
     }
     return out.join(" ").trim();
   }

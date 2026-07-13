@@ -815,14 +815,22 @@ function renderStateProse(state) {
       clauses.push({ kind: "plain", text: r.text + " " + (r.plural ? "are" : "is") + " bare" });
     }
 
-    if (!clauses.length) continue;
+    // Species (non-human) → a leading sentence, so the RP model is told it AND it shows in the
+    // injected block (the Inspector's "Injected into the RP model" pane). Plain human is stripped
+    // on apply already; guard here too so "human"/"man"/"woman" never surface as a species line.
+    const sp = entry && typeof entry.species === "string" ? entry.species.trim() : "";
+    const showSpecies = sp && !/^(humans?|persons?|people|man|woman|men|women|boys?|girls?|guys?|lady|male|female)$/i.test(sp);
+
+    if (!clauses.length && !showSpecies) continue;
 
     const rendered = clauses.map((c, i) => {
       if (c.kind === "plain") return i === 0 ? cap(c.text) : c.text;
       return i === 0 ? Subj + " " + c.text : subjPron + " " + c.text;
     });
 
-    out.push(rendered.join("; ") + ".");
+    const speciesSentence = showSpecies ? `${Subj} ${isSelf ? "are" : "is"} a ${sp}.` : "";
+    const bodySentence = rendered.length ? rendered.join("; ") + "." : "";
+    out.push([speciesSentence, bodySentence].filter(Boolean).join(" "));
   }
 
   return out.join(" ").trim();   // empty state -> ""
