@@ -1,0 +1,19 @@
+{
+  "name": "beholder",
+  "version": "0.5.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "description": "Beholder physical-state tracker — Marinara Engine port (browser extension).",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test 'test/*.test.js'",
+    "sync-core": "node scripts/sync-core.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.27.7"
+  },
+  "dependencies": {
+    "jquery": "^4.0.0"
+  }
+}

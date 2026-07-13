@@ -1,0 +1,10 @@
+{
+  "kind": "marinara.extension",
+  "version": 1,
+  "config": {
+    "name": "Beholder",
+    "description": "Live physical-state tracker for Roleplay — clothing per body slot, held items, wounds, and species, kept consistent and shown as a paper-doll. Uses a dedicated extractor endpoint (bring-your-own OpenAI-compatible server).",
+    "enabled": true,
+    "jsPath": "dist/beholder.js"
+  }
+}
