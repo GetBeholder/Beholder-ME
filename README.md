@@ -30,21 +30,15 @@ SillyTavern extension; only the host wiring (`st-shim.js`) is Marinara-specific.
 
 ## Install
 
-Beholder ships as a Marinara **browser extension** — one bundled JS file.
+It's **one JavaScript file** — download it and import it. No build step, no npm.
 
-1. **Build the bundle** (produces `dist/beholder.js`):
-   ```bash
-   npm install
-   npm run build
-   ```
-2. In Marinara, open **Settings → Extension Library**.
-3. Import it — either way works:
-   - **Import Extension File** → pick `dist/beholder.js` *(simplest — this is what most
-     people do)*. Or pick a release `.zip`.
-   - **Import Extension Folder** → pick this repo's folder (uses `manifest.json` for the
-     name + description).
-4. It installs enabled. A **Beholder button** (the eye logo) appears in the **Roleplay**
-   chat toolbar — click it to open the panel.
+1. Download **[`beholder.js`](beholder.js)** from this repo *(open the file → **Download raw**)*.
+2. In Marinara, open **Settings → Extension Library → Import Extension File** and pick
+   `beholder.js`.
+3. Done. A **Beholder button** (the eye logo) appears in the **Roleplay** chat toolbar —
+   click it to open the panel.
+
+To update later, download the newer `beholder.js` and import it again.
 
 ## Setup
 
