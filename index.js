@@ -307,31 +307,8 @@ function stripModelMissing(delta) {
     }
     return delta;
 }
-// A body part is never a WORN garment. The card-seed chunker keeps species/anatomy paragraphs so
-// species can seed (angel/satyr/etc.), but that also lets the worn lane grab a body part — e.g. an
-// angel's "white wings" filed as a worn item. Strip those from `worn`; exotic-slot stubs from the
-// species lane handle the anatomy for the doll.
-const ANATOMY_NOT_WORN = new Set([
-    'wing', 'wings', 'tail', 'tails', 'horn', 'horns', 'claw', 'claws', 'talon', 'talons',
-    'fang', 'fangs', 'hoof', 'hooves', 'paw', 'paws', 'snout', 'muzzle', 'mane', 'gill', 'gills',
-    'fin', 'fins', 'tentacle', 'tentacles', 'antenna', 'antennae', 'scale', 'scales', 'feather', 'feathers', 'fur',
-]);
-function stripAnatomyWorn(delta) {
-    for (const char of Object.keys(delta || {})) {
-        const body = delta[char] && delta[char].body;
-        if (!body || typeof body !== 'object') continue;
-        for (const slot of Object.keys(body)) {
-            const sd = body[slot];
-            if (sd && Array.isArray(sd.worn)) {
-                sd.worn = sd.worn.filter((w) => !(w && typeof w.item === 'string'
-                    && ANATOMY_NOT_WORN.has(w.item.toLowerCase().trim())));
-            }
-        }
-    }
-    return delta;
-}
 function mapCharacters(delta) {
-    return stripAnatomyWorn(stripModelMissing(dropHidden(resolveAliases(delta, getAliasLookup()), getCharOverrides().hidden)));
+    return stripModelMissing(dropHidden(resolveAliases(delta, getAliasLookup()), getCharOverrides().hidden));
 }
 
 // Order + filter the running state for DISPLAY (persona first, hidden removed).
