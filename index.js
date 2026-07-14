@@ -328,7 +328,7 @@ function applyCharView(state) {
 function renderPanel(state) {
     // Derived sleeve completion so the doll shows a jacket/coat actually covering the arms
     // (see withSleeveCoverage) — non-destructive, matches what the prompt serializer overlays.
-    renderPanelRaw(applyCharView(withSleeveCoverageState(state)));
+    renderPanelRaw(applyCharView(withBareReconciledState(withSleeveCoverageState(state))));
 }
 
 // Re-canonicalize the stored running state after an alias/hidden change so an
@@ -885,13 +885,41 @@ function withSleeveCoverageState(state) {
     return out;
 }
 
+// A slot marked `bare:true` CANNOT also be clothed. The flags lane frequently marks a takeoff
+// with just `bare:true` while the worn lane fails to clear the stack — so the garment lingers in
+// `worn`, the doll still draws it, and the takeoff looks ignored (you end up removing it by hand).
+// Derived, never persisted (keeps datagen parity): wherever a slot is bare, hide its worn stack so
+// the doll AND the injected state show skin — matching "she bares her chest". Applied outermost so
+// it also clears anything the sleeve overlay put onto a bare arm.
+function withBareReconciled(body) {
+    if (!body || typeof body !== 'object') return body;
+    let out = null;
+    for (const slot of Object.keys(body)) {
+        const cell = body[slot];
+        if (cell && cell.bare === true && Array.isArray(cell.worn) && cell.worn.length) {
+            if (!out) out = { ...body };
+            const { worn, ...rest } = cell;
+            out[slot] = rest;
+        }
+    }
+    return out || body;
+}
+function withBareReconciledState(state) {
+    if (!state || typeof state !== 'object') return state;
+    const out = {};
+    for (const [name, cs] of Object.entries(state)) {
+        out[name] = cs && cs.body ? { ...cs, body: withBareReconciled(cs.body) } : cs;
+    }
+    return out;
+}
+
 function serializeStateForPrompt(state) {
     if (!state || Object.keys(state).length === 0) return '';
     // D30: overlay dependent-missing (a hand when the arm is gone) so the RP model sees the same implied loss
     // the panel shows. Derived, not persisted. Then render as PROSE (never JSON — see renderStateProse above).
     const derived = {};
     for (const [name, cs] of Object.entries(state)) {
-        derived[name] = cs?.body ? { ...cs, body: withSleeveCoverage(withDependentMissing(cs.body)) } : cs;
+        derived[name] = cs?.body ? { ...cs, body: withBareReconciled(withSleeveCoverage(withDependentMissing(cs.body))) } : cs;
     }
     const prose = renderStateProse(derived);
     return prose ? `Current physical state: ${prose}` : '';
