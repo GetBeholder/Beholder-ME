@@ -12540,7 +12540,24 @@ ${canonical}`);
       if (Array.isArray(parent) && idx >= 0 && idx < parent.length) parent.splice(idx, 1);
     }
   }
-  function pruneEmpties(parsed) {
+  function keepOriginallyEmpty(parsed) {
+    const keep = /* @__PURE__ */ new Set();
+    const delta = parsed && parsed.delta;
+    if (!isObj(delta)) return keep;
+    for (const char of Object.keys(delta)) {
+      const body = isObj(delta[char]) ? delta[char].body : null;
+      if (!isObj(body)) continue;
+      for (const slot of Object.keys(body)) {
+        const sd = body[slot];
+        if (!isObj(sd)) continue;
+        for (const lf of ["worn", "wounds"]) {
+          if (Array.isArray(sd[lf]) && sd[lf].length === 0) keep.add(`${char}.${slot}.${lf}`);
+        }
+      }
+    }
+    return keep;
+  }
+  function pruneEmpties(parsed, keep) {
     const delta = parsed.delta;
     if (!isObj(delta)) return;
     for (const char of Object.keys(delta)) {
@@ -12552,7 +12569,10 @@ ${canonical}`);
           const sd = body[slot];
           if (isObj(sd)) {
             for (const lf of ["worn", "wounds"]) {
-              if (lf in sd && Array.isArray(sd[lf]) && sd[lf].length === 0) delete sd[lf];
+              if (lf in sd && Array.isArray(sd[lf]) && sd[lf].length === 0) {
+                if (keep && keep.has(`${char}.${slot}.${lf}`)) continue;
+                delete sd[lf];
+              }
             }
             if (Object.keys(sd).length === 0) delete body[slot];
           } else if (sd === null || sd === void 0 || sd === "" || Array.isArray(sd) && sd.length === 0 || isObj(sd) && Object.keys(sd).length === 0) {
@@ -12578,8 +12598,9 @@ ${canonical}`);
     const fatal = errors.filter((e) => e.severity === "error");
     const depth = (p) => p.split(".").length - 1;
     fatal.sort((a, b) => depth(b.path) - depth(a.path) || lastListIndex(b.path) - lastListIndex(a.path));
+    const keep = keepOriginallyEmpty(parsed);
     for (const e of fatal) removePath(result, e.path);
-    pruneEmpties(result);
+    pruneEmpties(result, keep);
     return result;
   }
   function applyValidator(merged, opts = {}) {
