@@ -9568,6 +9568,11 @@
           if ("worn_remove" in slotDelta) {
             slotState.worn = removeWorn(slotState.worn, slotDelta.worn_remove);
           }
+          if (slotDelta.bare === true) {
+            slotState.worn = [];
+          } else if (Array.isArray(slotDelta.worn) && slotDelta.worn.length > 0 && slotState.bare === true) {
+            delete slotState.bare;
+          }
           if (Array.isArray(slotState.worn) && slotState.worn.length === 0) {
             delete slotState.worn;
           }
@@ -15139,7 +15144,7 @@ ${canonical}`);
     return out;
   }
   function renderPanel2(state) {
-    renderPanel(applyCharView(withBareReconciledState(withSleeveCoverageState(state))));
+    renderPanel(applyCharView(withSleeveCoverageState(state)));
   }
   function canonicalizeState() {
     const cs = getChatState();
@@ -15574,32 +15579,11 @@ ${canonical}`);
     }
     return out;
   }
-  function withBareReconciled(body) {
-    if (!body || typeof body !== "object") return body;
-    let out = null;
-    for (const slot of Object.keys(body)) {
-      const cell = body[slot];
-      if (cell && cell.bare === true && Array.isArray(cell.worn) && cell.worn.length) {
-        if (!out) out = { ...body };
-        const { worn, ...rest } = cell;
-        out[slot] = rest;
-      }
-    }
-    return out || body;
-  }
-  function withBareReconciledState(state) {
-    if (!state || typeof state !== "object") return state;
-    const out = {};
-    for (const [name, cs] of Object.entries(state)) {
-      out[name] = cs && cs.body ? { ...cs, body: withBareReconciled(cs.body) } : cs;
-    }
-    return out;
-  }
   function serializeStateForPrompt(state) {
     if (!state || Object.keys(state).length === 0) return "";
     const derived = {};
     for (const [name, cs] of Object.entries(state)) {
-      derived[name] = cs?.body ? { ...cs, body: withBareReconciled(withSleeveCoverage(withDependentMissing(cs.body))) } : cs;
+      derived[name] = cs?.body ? { ...cs, body: withSleeveCoverage(withDependentMissing(cs.body)) } : cs;
     }
     const prose = renderStateProse(derived);
     return prose ? `Current physical state: ${prose}` : "";

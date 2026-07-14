@@ -278,6 +278,16 @@ function applyCharDelta(state, delta) {
                 if ('worn_remove' in slotDelta) {
                     slotState.worn = removeWorn(slotState.worn, slotDelta.worn_remove);
                 }
+                // A slot can't be BOTH bare and clothed. Reconcile toward what THIS delta just
+                // asserted (the fresh signal): a `bare:true` this turn drops the worn stack (naked
+                // now); a garment ADDED this turn drops a stale `bare` (dressed now). Untouched
+                // slots are left alone — only a fresh assertion resolves the contradiction.
+                if (slotDelta.bare === true) {
+                    slotState.worn = [];
+                } else if (Array.isArray(slotDelta.worn) && slotDelta.worn.length > 0
+                           && slotState.bare === true) {
+                    delete slotState.bare;
+                }
                 // Drop an emptied worn stack, then an emptied slot (parity with
                 // the server-side "empty slot is removed" semantics).
                 if (Array.isArray(slotState.worn) && slotState.worn.length === 0) {
