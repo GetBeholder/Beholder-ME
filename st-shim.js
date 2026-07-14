@@ -740,19 +740,74 @@ const GGUF_URL = "https://huggingface.co/GetBeholder/Beholder-GGUF";
 function escapeHtmlLite(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 }
+// Prompt strategy is bound to the MODEL, not the transport type. `beholder` = the trained
+// model → 5-pass SHORT prompts (systemPrompt empty). `generic` = any other OpenAI-compatible
+// model → ONE mono call with the bundled 4k LONG prompt. Feeding the wrong one degrades the
+// model (the trained model learned the terse per-lane prompts; a general model needs the full
+// rubric). So the mode is per-extractor: auto-recognized from the served model id, overridable.
+const looksBeholder = (str) => /beholder/i.test(String(str || ""));
+function setExtractionMode(s, mode) {
+  s.extractionMode = mode === "generic" ? "generic" : "beholder";
+  if (s.extractionMode === "generic") {
+    s.systemPrompt = GENERAL_PROMPT;      // extract() mono path
+    s.systemPromptTag = "general-4k";     // the bundled 4k prompt — Doctor surfaces this tag
+  } else {
+    s.systemPrompt = "";                  // extract() 5-pass path
+    delete s.systemPromptTag;
+  }
+}
+// Read the mode, falling back to the legacy signal (systemPrompt===GENERAL_PROMPT) for
+// settings written before extractionMode existed — no stateful migration needed.
+function extractionModeOf(s) {
+  if (s && (s.extractionMode === "generic" || s.extractionMode === "beholder")) return s.extractionMode;
+  return s && s.systemPrompt === GENERAL_PROMPT ? "generic" : "beholder";
+}
+// GET {base}/models (base already carries /v1, like probeEndpoint) → the served model id.
+async function detectModelId(base, apiKey) {
+  const url = String(base || "").replace(/\/+$/, "") + "/models";
+  try {
+    const headers = {};
+    if (apiKey) headers["Authorization"] = "Bearer " + apiKey;
+    const resp = await fetch(url, { method: "GET", headers });
+    const data = await resp.json();
+    return (data && data.data && data.data[0] && data.data[0].id) || "";
+  } catch {
+    return "";
+  }
+}
+// Re-sync the Connection UI (status line + mode selector) after async recognition resolves.
+function refreshConnUi() {
+  const card = document.querySelector("#bh-conn2");
+  if (!card) return;
+  const s = extension_settings[MODULE_NAME] || {};
+  renderConnStatus(card.querySelector(".bh-conn2-status"));
+  const modeSel = card.querySelector("#bh-conn2-mode-sel");
+  if (modeSel) modeSel.value = extractionModeOf(s);
+}
+// Auto-apply recognition: probe the served id (endpoint / keyless conn) or use the connection
+// name (keyed conn — can't query through the proxy); "beholder" in the id ⇒ 5-pass, else the
+// caller's fallback. The user can still override via the selector afterward.
+async function recognizeAndApply({ base, name, apiKey, fallback }) {
+  const id = base ? await detectModelId(base, apiKey) : "";
+  const s = extension_settings[MODULE_NAME] || {};
+  const evidence = id || name || "";
+  const mode = evidence ? (looksBeholder(evidence) ? "beholder" : "generic") : fallback;
+  s._detectedModelId = id || name || "";
+  setExtractionMode(s, mode);
+  saveSettingsDebounced();
+  refreshConnUi();
+}
 function setEndpoint(url) {
-  // "Local endpoint" = the TRAINED Beholder model → 5-pass SHORT prompts (systemPrompt empty).
   const s = (extension_settings[MODULE_NAME] = extension_settings[MODULE_NAME] || {});
   s.endpoint = (url || "").trim();
   if (s.endpoint) { delete s.meConnectionId; delete s.meConnName; }
-  if (s.systemPrompt === GENERAL_PROMPT) { s.systemPrompt = ""; delete s.systemPromptTag; } // drop the auto mono prompt for the trained model
+  // Provisional: a local endpoint is the trained model unless recognition says otherwise.
+  setExtractionMode(s, "beholder");
   saveSettingsDebounced();
+  if (s.endpoint) void recognizeAndApply({ base: s.endpoint, apiKey: s.apiKey, fallback: "beholder" });
 }
 function useConnection(id, name, keyless, baseUrl) {
-  // A Marinara connection = a GENERAL model → single mono call with the bundled 4k LONG prompt.
   const s = (extension_settings[MODULE_NAME] = extension_settings[MODULE_NAME] || {});
-  s.systemPrompt = GENERAL_PROMPT;
-  s.systemPromptTag = "general-4k"; // the bundled mono prompt — Doctor surfaces this tag
   if (keyless && baseUrl) {
     s.endpoint = baseUrl; // reachable directly — no proxy needed
     delete s.meConnectionId;
@@ -762,14 +817,19 @@ function useConnection(id, name, keyless, baseUrl) {
     s.meConnName = name || id;
     s.endpoint = "";
   }
+  // Provisional: a connection is a general model unless its name/served id says Beholder.
+  setExtractionMode(s, looksBeholder(name) ? "beholder" : "generic");
   saveSettingsDebounced();
+  // keyless → probe its baseUrl for the real id; keyed → the proxy hides it, rely on the name.
+  void recognizeAndApply({ base: keyless ? baseUrl : "", name, apiKey: s.apiKey, fallback: looksBeholder(name) ? "beholder" : "generic" });
 }
 function clearExtractor() {
   const s = extension_settings[MODULE_NAME] || {};
   s.endpoint = "";
   delete s.meConnectionId;
   delete s.meConnName;
-  if (s.systemPrompt === GENERAL_PROMPT) { s.systemPrompt = ""; delete s.systemPromptTag; }
+  delete s._detectedModelId;
+  setExtractionMode(s, "beholder"); // reset to the default (systemPrompt cleared)
   saveSettingsDebounced();
 }
 // Transport for a KEYED Marinara connection: routes the completion through ME's server
@@ -824,15 +884,13 @@ function renderConnStatus(el) {
   if (!el) return;
   const s = extension_settings[MODULE_NAME] || {};
   const ep = (s.endpoint || "").trim();
-  const general = s.systemPrompt === GENERAL_PROMPT;
+  const kind = extractionModeOf(s) === "generic" ? "general model · long prompt" : "Beholder model · 5-pass";
   if (s.meConnectionId) {
     el.className = "bh-conn2-status ok";
-    el.innerHTML = `<b>✓ Extractor set</b> — Marinara connection <code>${escapeHtmlLite(s.meConnName || s.meConnectionId)}</code> · via Marinara · general model`;
+    el.innerHTML = `<b>✓ Extractor set</b> — Marinara connection <code>${escapeHtmlLite(s.meConnName || s.meConnectionId)}</code> · via Marinara · ${kind}`;
   } else if (ep) {
     el.className = "bh-conn2-status ok";
-    el.innerHTML = general
-      ? `<b>✓ Extractor set</b> — general model at <code>${escapeHtmlLite(ep)}</code>`
-      : `<b>✓ Extractor set</b> — Beholder model at <code>${escapeHtmlLite(ep)}</code>`;
+    el.innerHTML = `<b>✓ Extractor set</b> — <code>${escapeHtmlLite(ep)}</code> · ${kind}`;
   } else {
     el.className = "bh-conn2-status warn";
     el.innerHTML = `<b>⚠ No extractor configured.</b> Beholder can't track state yet — choose one below.`;
@@ -855,6 +913,14 @@ async function injectConnCardIntoSettings() {
   card.className = "bh-conn2";
   card.innerHTML = `
     <div class="bh-conn2-status"></div>
+    <div class="bh-conn2-mode" style="display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;margin:6px 0 10px">
+      <label class="bh-conn2-t" for="bh-conn2-mode-sel" style="font-weight:600">Model type</label>
+      <select id="bh-conn2-mode-sel" style="flex:1;min-width:180px">
+        <option value="beholder">Beholder model — 5-pass (short prompts)</option>
+        <option value="generic">Other model — single long prompt</option>
+      </select>
+      <div class="bh-conn2-hint" style="flex-basis:100%;margin:0">Auto-detected from the served model — override if wrong. The trained Beholder model needs the 5-pass prompts; any other model (GPT / Gemma / Claude) needs the long prompt.</div>
+    </div>
     <div class="bh-conn2-opt">
       <div class="bh-conn2-h"><span class="bh-conn2-t">Local endpoint</span><span class="bh-conn2-rec">recommended</span></div>
       <div class="bh-conn2-hint">Run the Beholder model in llama.cpp / KoboldCpp / LM Studio and paste its URL. <a href="${GGUF_URL}" target="_blank" rel="noopener">Get the model ↗</a></div>
@@ -868,6 +934,19 @@ async function injectConnCardIntoSettings() {
   body.insertBefore(card, body.firstChild);
   const statusEl = card.querySelector(".bh-conn2-status");
   renderConnStatus(statusEl);
+
+  // Model-type selector: reflects the recognized/stored mode; a manual override wins.
+  const modeSel = card.querySelector("#bh-conn2-mode-sel");
+  if (modeSel) {
+    modeSel.value = extractionModeOf(s);
+    modeSel.addEventListener("change", function () {
+      const st = (extension_settings[MODULE_NAME] = extension_settings[MODULE_NAME] || {});
+      setExtractionMode(st, this.value);
+      saveSettingsDebounced();
+      renderConnStatus(statusEl);
+      banner(this.value === "generic" ? "Model type: other model — long prompt" : "Model type: Beholder — 5-pass");
+    });
+  }
 
   // Beholder-added "Display" section — roleplay presentation tweaks.
   if (!view.querySelector("#bh-display-extra")) {

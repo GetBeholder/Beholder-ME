@@ -11422,6 +11422,51 @@ body.bh-big-portraits .mari-message{ --roleplay-avatar-scale: var(--bh-portrait-
   function escapeHtmlLite(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
   }
+  var looksBeholder = (str) => /beholder/i.test(String(str || ""));
+  function setExtractionMode(s, mode) {
+    s.extractionMode = mode === "generic" ? "generic" : "beholder";
+    if (s.extractionMode === "generic") {
+      s.systemPrompt = GENERAL_PROMPT;
+      s.systemPromptTag = "general-4k";
+    } else {
+      s.systemPrompt = "";
+      delete s.systemPromptTag;
+    }
+  }
+  function extractionModeOf(s) {
+    if (s && (s.extractionMode === "generic" || s.extractionMode === "beholder")) return s.extractionMode;
+    return s && s.systemPrompt === GENERAL_PROMPT ? "generic" : "beholder";
+  }
+  async function detectModelId(base, apiKey) {
+    const url = String(base || "").replace(/\/+$/, "") + "/models";
+    try {
+      const headers = {};
+      if (apiKey) headers["Authorization"] = "Bearer " + apiKey;
+      const resp = await fetch(url, { method: "GET", headers });
+      const data = await resp.json();
+      return data && data.data && data.data[0] && data.data[0].id || "";
+    } catch {
+      return "";
+    }
+  }
+  function refreshConnUi() {
+    const card = document.querySelector("#bh-conn2");
+    if (!card) return;
+    const s = extension_settings[MODULE_NAME] || {};
+    renderConnStatus(card.querySelector(".bh-conn2-status"));
+    const modeSel = card.querySelector("#bh-conn2-mode-sel");
+    if (modeSel) modeSel.value = extractionModeOf(s);
+  }
+  async function recognizeAndApply({ base, name, apiKey, fallback }) {
+    const id = base ? await detectModelId(base, apiKey) : "";
+    const s = extension_settings[MODULE_NAME] || {};
+    const evidence = id || name || "";
+    const mode = evidence ? looksBeholder(evidence) ? "beholder" : "generic" : fallback;
+    s._detectedModelId = id || name || "";
+    setExtractionMode(s, mode);
+    saveSettingsDebounced();
+    refreshConnUi();
+  }
   function setEndpoint(url) {
     const s = extension_settings[MODULE_NAME] = extension_settings[MODULE_NAME] || {};
     s.endpoint = (url || "").trim();
@@ -11429,16 +11474,12 @@ body.bh-big-portraits .mari-message{ --roleplay-avatar-scale: var(--bh-portrait-
       delete s.meConnectionId;
       delete s.meConnName;
     }
-    if (s.systemPrompt === GENERAL_PROMPT) {
-      s.systemPrompt = "";
-      delete s.systemPromptTag;
-    }
+    setExtractionMode(s, "beholder");
     saveSettingsDebounced();
+    if (s.endpoint) void recognizeAndApply({ base: s.endpoint, apiKey: s.apiKey, fallback: "beholder" });
   }
   function useConnection(id, name, keyless, baseUrl) {
     const s = extension_settings[MODULE_NAME] = extension_settings[MODULE_NAME] || {};
-    s.systemPrompt = GENERAL_PROMPT;
-    s.systemPromptTag = "general-4k";
     if (keyless && baseUrl) {
       s.endpoint = baseUrl;
       delete s.meConnectionId;
@@ -11448,7 +11489,9 @@ body.bh-big-portraits .mari-message{ --roleplay-avatar-scale: var(--bh-portrait-
       s.meConnName = name || id;
       s.endpoint = "";
     }
+    setExtractionMode(s, looksBeholder(name) ? "beholder" : "generic");
     saveSettingsDebounced();
+    void recognizeAndApply({ base: keyless ? baseUrl : "", name, apiKey: s.apiKey, fallback: looksBeholder(name) ? "beholder" : "generic" });
   }
   function makeMeConnTransport(connId) {
     return {
@@ -11482,13 +11525,13 @@ body.bh-big-portraits .mari-message{ --roleplay-avatar-scale: var(--bh-portrait-
     if (!el) return;
     const s = extension_settings[MODULE_NAME] || {};
     const ep = (s.endpoint || "").trim();
-    const general = s.systemPrompt === GENERAL_PROMPT;
+    const kind = extractionModeOf(s) === "generic" ? "general model \xB7 long prompt" : "Beholder model \xB7 5-pass";
     if (s.meConnectionId) {
       el.className = "bh-conn2-status ok";
-      el.innerHTML = `<b>\u2713 Extractor set</b> \u2014 Marinara connection <code>${escapeHtmlLite(s.meConnName || s.meConnectionId)}</code> \xB7 via Marinara \xB7 general model`;
+      el.innerHTML = `<b>\u2713 Extractor set</b> \u2014 Marinara connection <code>${escapeHtmlLite(s.meConnName || s.meConnectionId)}</code> \xB7 via Marinara \xB7 ${kind}`;
     } else if (ep) {
       el.className = "bh-conn2-status ok";
-      el.innerHTML = general ? `<b>\u2713 Extractor set</b> \u2014 general model at <code>${escapeHtmlLite(ep)}</code>` : `<b>\u2713 Extractor set</b> \u2014 Beholder model at <code>${escapeHtmlLite(ep)}</code>`;
+      el.innerHTML = `<b>\u2713 Extractor set</b> \u2014 <code>${escapeHtmlLite(ep)}</code> \xB7 ${kind}`;
     } else {
       el.className = "bh-conn2-status warn";
       el.innerHTML = `<b>\u26A0 No extractor configured.</b> Beholder can't track state yet \u2014 choose one below.`;
@@ -11509,6 +11552,14 @@ body.bh-big-portraits .mari-message{ --roleplay-avatar-scale: var(--bh-portrait-
     card.className = "bh-conn2";
     card.innerHTML = `
     <div class="bh-conn2-status"></div>
+    <div class="bh-conn2-mode" style="display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 10px;margin:6px 0 10px">
+      <label class="bh-conn2-t" for="bh-conn2-mode-sel" style="font-weight:600">Model type</label>
+      <select id="bh-conn2-mode-sel" style="flex:1;min-width:180px">
+        <option value="beholder">Beholder model \u2014 5-pass (short prompts)</option>
+        <option value="generic">Other model \u2014 single long prompt</option>
+      </select>
+      <div class="bh-conn2-hint" style="flex-basis:100%;margin:0">Auto-detected from the served model \u2014 override if wrong. The trained Beholder model needs the 5-pass prompts; any other model (GPT / Gemma / Claude) needs the long prompt.</div>
+    </div>
     <div class="bh-conn2-opt">
       <div class="bh-conn2-h"><span class="bh-conn2-t">Local endpoint</span><span class="bh-conn2-rec">recommended</span></div>
       <div class="bh-conn2-hint">Run the Beholder model in llama.cpp / KoboldCpp / LM Studio and paste its URL. <a href="${GGUF_URL}" target="_blank" rel="noopener">Get the model \u2197</a></div>
@@ -11522,6 +11573,17 @@ body.bh-big-portraits .mari-message{ --roleplay-avatar-scale: var(--bh-portrait-
     body.insertBefore(card, body.firstChild);
     const statusEl = card.querySelector(".bh-conn2-status");
     renderConnStatus(statusEl);
+    const modeSel = card.querySelector("#bh-conn2-mode-sel");
+    if (modeSel) {
+      modeSel.value = extractionModeOf(s);
+      modeSel.addEventListener("change", function() {
+        const st = extension_settings[MODULE_NAME] = extension_settings[MODULE_NAME] || {};
+        setExtractionMode(st, this.value);
+        saveSettingsDebounced();
+        renderConnStatus(statusEl);
+        banner(this.value === "generic" ? "Model type: other model \u2014 long prompt" : "Model type: Beholder \u2014 5-pass");
+      });
+    }
     if (!view.querySelector("#bh-display-extra")) {
       const S = extension_settings[MODULE_NAME] || {};
       const psize = S.portraitScale || "";
@@ -12093,7 +12155,8 @@ ${canonical}`);
       };
     };
     if (cfg.systemPrompt) {
-      return callOne(cfg.systemPrompt);
+      const mono = await callOne(cfg.systemPrompt);
+      return { ...mono, systemUsed: cfg.systemPrompt };
     }
     const results = await Promise.all(LANE_ORDER.map((lane) => callOne(SHORT_PASS_PROMPTS[lane])));
     let delta = {};
@@ -12101,7 +12164,14 @@ ${canonical}`);
     const parseFailed = results.some((r) => r.parseFailed);
     const raw = LANE_ORDER.map((lane, i) => `[${lane}] ${results[i].raw ?? ""}`).join("\n");
     const parsed = Object.fromEntries(LANE_ORDER.map((lane, i) => [lane, results[i].parsed]));
-    return { raw, parsed, delta, parseFailed };
+    return {
+      raw,
+      parsed,
+      delta,
+      parseFailed,
+      systemUsed: LANE_ORDER.map((lane) => `[${lane}]
+${SHORT_PASS_PROMPTS[lane]}`).join("\n\n")
+    };
   }
 
   // validator_data.js
@@ -14711,7 +14781,7 @@ ${canonical}`);
       const turn = {
         messageId,
         canonical,
-        system: cfg.systemPrompt || EXTRACTION_SYSTEM_V2_SHORT,
+        system: result.systemUsed || cfg.systemPrompt || EXTRACTION_SYSTEM_V2_SHORT,
         user: buildUserMessage(canonical, prevForExtractor, personaName2),
         raw: result.raw,
         parsed: result.parsed,
@@ -14785,7 +14855,7 @@ ${canonical}`);
       host.onExtraction?.({
         messageId: "note",
         canonical,
-        system: cfg.systemPrompt || EXTRACTION_SYSTEM_V2_SHORT,
+        system: result.systemUsed || cfg.systemPrompt || EXTRACTION_SYSTEM_V2_SHORT,
         user: buildUserMessage(canonical, prevForExtractor, personaName2),
         raw: result.raw,
         parsed: result.parsed,
@@ -15753,10 +15823,22 @@ ${canonical}`);
         const tag = customPrompt ? settings.systemPromptTag || "custom" : SHORT_PASS_TAG;
         const mode = customPrompt ? "mono" : "5-pass";
         const isCustom = customPrompt && !settings.systemPromptTag;
+        const servedId = lastProbe && lastProbe.servedModel || settings._detectedModelId || "";
+        const looksBeholder2 = /beholder/i.test(servedId);
+        let warn = isCustom, note = "";
+        if (servedId) {
+          if (customPrompt && looksBeholder2) {
+            warn = true;
+            note = ` \xB7 \u26A0 served <code>${esc2(servedId)}</code> looks like Beholder \u2014 5-pass is probably right`;
+          } else if (!customPrompt && !looksBeholder2) {
+            warn = true;
+            note = ` \xB7 \u26A0 served <code>${esc2(servedId)}</code> isn't Beholder \u2014 switch to the long prompt if it's a general model`;
+          }
+        }
         return {
-          dot: isCustom ? "warn" : "ok",
+          dot: warn ? "warn" : "ok",
           label: "System prompt",
-          value: `<code>${esc2(tag)}</code> \xB7 ${mode}`
+          value: `<code>${esc2(tag)}</code> \xB7 ${mode}${note}`
         };
       })(),
       { dot: "ok", label: "Extension", value: `<code>${esc2(EXTENSION_VERSION)}</code>` },

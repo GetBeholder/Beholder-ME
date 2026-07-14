@@ -1135,8 +1135,18 @@ function getDoctorVitals() {
             const tag = customPrompt ? (settings.systemPromptTag || 'custom') : SHORT_PASS_TAG;
             const mode = customPrompt ? 'mono' : '5-pass';
             const isCustom = customPrompt && !settings.systemPromptTag;
-            return { dot: isCustom ? 'warn' : 'ok', label: 'System prompt',
-                value: `<code>${esc(tag)}</code> · ${mode}` };
+            // Mismatch warning: the served/recognized model id vs the chosen prompt strategy.
+            // A generic (mono) prompt on a Beholder-looking model, or a 5-pass on a model whose
+            // id doesn't look like Beholder, is probably wrong — flag it (never block).
+            const servedId = (lastProbe && lastProbe.servedModel) || settings._detectedModelId || '';
+            const looksBeholder = /beholder/i.test(servedId);
+            let warn = isCustom, note = '';
+            if (servedId) {
+                if (customPrompt && looksBeholder) { warn = true; note = ` · ⚠ served <code>${esc(servedId)}</code> looks like Beholder — 5-pass is probably right`; }
+                else if (!customPrompt && !looksBeholder) { warn = true; note = ` · ⚠ served <code>${esc(servedId)}</code> isn't Beholder — switch to the long prompt if it's a general model`; }
+            }
+            return { dot: warn ? 'warn' : 'ok', label: 'System prompt',
+                value: `<code>${esc(tag)}</code> · ${mode}${note}` };
         })(),
         { dot: 'ok', label: 'Extension', value: `<code>${esc(EXTENSION_VERSION)}</code>` },
         { dot: 'ok', label: 'Host', value: `<code>${esc(stVersion)}</code>` },

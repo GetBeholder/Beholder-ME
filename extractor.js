@@ -297,7 +297,10 @@ export async function extract({ canonical, prevState, personaName, cfg, signal, 
     };
     // A custom system prompt (a non-Beholder OpenAI-compatible model) keeps the single monolithic call.
     if (cfg.systemPrompt) {
-        return callOne(cfg.systemPrompt);
+        const mono = await callOne(cfg.systemPrompt);
+        // systemUsed = the prompt that ACTUALLY ran, so the Doctor reproducer is truthful
+        // instead of always logging a mono MIN prompt. See FIX_CONNECTOR_MODEL_BLIND §3b.
+        return { ...mono, systemUsed: cfg.systemPrompt };
     }
     // Beholder: the trained model is PER-LANE — run the 5 short passes (train==inference parity) and
     // deep-merge. The worn pass carries the worn_remove takeoff clause, so removals fire. Passes are
@@ -309,5 +312,8 @@ export async function extract({ canonical, prevState, personaName, cfg, signal, 
     const parseFailed = results.some((r) => r.parseFailed);
     const raw = LANE_ORDER.map((lane, i) => `[${lane}] ${results[i].raw ?? ''}`).join('\n');
     const parsed = Object.fromEntries(LANE_ORDER.map((lane, i) => [lane, results[i].parsed]));
-    return { raw, parsed, delta, parseFailed };
+    // systemUsed = the five short prompts that ACTUALLY ran (labeled per lane), so the
+    // Doctor reproducer shows the real 5-pass prompts, not a phantom mono prompt. §3b.
+    return { raw, parsed, delta, parseFailed,
+        systemUsed: LANE_ORDER.map((lane) => `[${lane}]\n${SHORT_PASS_PROMPTS[lane]}`).join('\n\n') };
 }

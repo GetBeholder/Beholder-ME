@@ -145,7 +145,7 @@ export class BeholderEngine {
         const turn = {
             messageId,
             canonical,
-            system: cfg.systemPrompt || EXTRACTION_SYSTEM_V2_SHORT,
+            system: result.systemUsed || cfg.systemPrompt || EXTRACTION_SYSTEM_V2_SHORT,
             user: buildUserMessage(canonical, prevForExtractor, personaName),
             raw: result.raw,
             parsed: result.parsed,
@@ -231,7 +231,7 @@ export class BeholderEngine {
         host.onExtraction?.({
             messageId: 'note',
             canonical,
-            system: cfg.systemPrompt || EXTRACTION_SYSTEM_V2_SHORT,
+            system: result.systemUsed || cfg.systemPrompt || EXTRACTION_SYSTEM_V2_SHORT,
             user: buildUserMessage(canonical, prevForExtractor, personaName),
             raw: result.raw,
             parsed: result.parsed,
