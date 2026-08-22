@@ -54,19 +54,37 @@ Training data. Compound add+remove clauses look under-represented in the corpus,
 and the model has learned that a sentence yields one kind of change. This wants a
 labelled round of single-clause swaps ("peels off X and ties on Y") and a retrain.
 
-## Interim options
+## Interim repair — SHIPPED in this extension
 
-The extension owns both its extraction and its merge (`state.js`), so unlike the
-Marinara package it *can* carry a deterministic repair:
+`takeoffClause()` in `extractor.js`. When the five-pass reply carries no
+`worn_remove` *and* the prose shows a garment coming off *and* the sentence is
+compound, the worn lane runs once more on the take-off clause alone and only its
+`worn_remove` entries are merged in. Never adds or replaces a `worn`.
 
-1. **Re-ask on a removal cue.** When the prose matches a takeoff pattern
-   (`takes off`, `peels off`, `kicks off`, `unbuckles`, `hangs … on`, `strips out
-   of`, `shrugs off`) and the reply carried no `worn_remove`, run the worn lane a
-   second time with removal-only framing and merge the two replies. Costs one
-   extra call on the sentences that need it. Removal-only prose scores 3/3, so
-   the second pass is asking the model something it is good at.
-2. **Slot-plausibility guard on the addition.** A garment→slot map (boots →
-   feet, gloves → hands) rejects the `boot on chest` half. This is the cheaper
-   half and fixes a visible symptom, not the loss.
+Measured through the real `extract()` against Beholder-Q8_0:
 
-Both are workarounds. Neither removes the need for the data round.
+| group | removal before | removal after | extra calls |
+|---|---|---|---|
+| compound | 2/8 | **8/8** | 6 |
+| removal only | 3/3 | 3/3 | 0 |
+| addition only | 4/4 | 4/4 | 0 |
+
+The repair costs nothing on ordinary turns — it only fires on the sentences that
+actually lost a removal.
+
+The route matters: re-asking the *same compound prose* with removal-only framing
+recovers **0 of 6**. It is the compound sentence itself that blinds the model, so
+the repair has to change the input, not the instruction.
+
+### Still open
+
+The second half of the failure is untouched: the added garment can land on the
+slots being removed from (`boot` on `chest`). A garment→slot map would reject it.
+That guard belongs wherever the merge runs, and in Marinara that is the Engine,
+so it is not the extension's to fix.
+
+### Marinara package
+
+None of this is available there. The package supplies prompts; the Engine runs
+the extraction and owns the merge, and its capability API has no agent-result
+hook. Fixing it for Marinara means either the data round or an Engine change.

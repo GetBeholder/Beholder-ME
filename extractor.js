@@ -274,18 +274,84 @@ function deepMergeDelta(dst, src) {
     return dst;
 }
 
+// ── Compound take-off repair (interim; see COMPOUND_ADD_REMOVE.md) ───────────
+// The trained extractor loses the removal when ONE sentence both takes a garment
+// off and puts another on: measured 2/8 on compound prose against 3/3 when the
+// take-off stands alone. It is the compound sentence itself that blinds it —
+// re-asking the same prose with removal-only framing recovers nothing (0 of 6),
+// while re-asking with just the take-off clause recovers all of them (8/8).
+// So this splits the sentence and asks about the half the model handles well.
+// Five prompt variants were measured first and none moved the number; the real
+// fix is a training round, and this stays until then.
+const TAKEOFF_CUE = new RegExp(
+    String.raw`\b(takes?|took|pulls?|pulled|peels?|peeled|kicks?|kicked|strips?|stripped|shrugs?|shrugged|slips?|slipped)\b[^.]{0,24}\b(off|out of)\b`
+    + String.raw`|\b(unbuckles?|unbuttons?|unzips?|removes?|removed|discards?|drops?|dropped|hangs?|hung|sheds?|doffs?)\b`,
+    'i',
+);
+
+/** The clause that shows a garment coming off, or null when the prose is not a compound take-off. */
+export function takeoffClause(prose) {
+    const text = String(prose || '');
+    if (!TAKEOFF_CUE.test(text)) return null;
+    const clauses = text.split(/,?\s+\band\b\s+/);
+    if (clauses.length < 2) return null;              // not compound; the model already handles it
+    const index = clauses.findIndex((c) => TAKEOFF_CUE.test(c));
+    if (index === -1) return null;
+    let clause = clauses[index].trim();
+    // A trailing clause ("and slips into sandals") has lost its subject; carry the
+    // first clause's opening word so the lane still knows who is acting.
+    if (index > 0 && !/^[A-Z]/.test(clause)) {
+        const subject = clauses[0].trim().split(/\s+/)[0];
+        if (subject) clause = `${subject} ${clause}`;
+    }
+    return /[.!?]$/.test(clause) ? clause : `${clause}.`;
+}
+
+/** True when no slot in the delta carries a worn_remove. */
+function lacksRemoval(delta) {
+    for (const character of Object.values(delta || {})) {
+        const body = character && typeof character === 'object' ? character.body : null;
+        for (const slot of Object.values(body || {})) {
+            if (slot && typeof slot === 'object' && Array.isArray(slot.worn_remove) && slot.worn_remove.length) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+/** Merge ONLY worn_remove entries from a repair pass — never additions. */
+function mergeRemovals(delta, repair) {
+    for (const [name, character] of Object.entries(repair || {})) {
+        const body = character && typeof character === 'object' ? character.body : null;
+        for (const [slot, data] of Object.entries(body || {})) {
+            const removals = data && typeof data === 'object' ? data.worn_remove : null;
+            if (!Array.isArray(removals) || removals.length === 0) continue;
+            delta[name] = delta[name] || {};
+            delta[name].body = delta[name].body || {};
+            delta[name].body[slot] = delta[name].body[slot] || {};
+            const existing = delta[name].body[slot].worn_remove;
+            delta[name].body[slot].worn_remove = [...new Set([...(Array.isArray(existing) ? existing : []), ...removals])];
+        }
+    }
+    return delta;
+}
+
 export async function extract({ canonical, prevState, personaName, cfg, signal, transport, maxTokens = EXTRACT_MAX_TOKENS }) {
     const user = buildUserMessage(canonical, prevState, personaName);
     // One model call with a given system prompt -> { raw, parsed, delta, parseFailed }.
     // temperature/max_tokens stay locked here (train/eval parity), never exposed. An injected `transport`
     // (WebLLMTransport, RemoteOpenAITransport, …) makes the call host-agnostic; with none, fall back to
     // the built-in OpenAI-compatible fetch so existing direct callers are unaffected.
-    const callOne = async (system) => {
+    const callOne = async (system, narrationOverride = null) => {
+        const message = narrationOverride
+            ? buildUserMessage(narrationOverride, prevState, personaName)
+            : user;
         const raw = transport
-            ? await transport.chatCompletion({ system, user, temperature: EXTRACT_TEMPERATURE, maxTokens, signal })
+            ? await transport.chatCompletion({ system, user: message, temperature: EXTRACT_TEMPERATURE, maxTokens, signal })
             : await callChatCompletions({
                 endpoint: cfg.endpoint, model: cfg.model, apiKey: cfg.apiKey,
-                system, user, temperature: EXTRACT_TEMPERATURE, maxTokens, signal,
+                system, user: message, temperature: EXTRACT_TEMPERATURE, maxTokens, signal,
             });
         const parsed = extractJson(raw);
         // parseFailed: model produced output that couldn't be parsed/repaired (truncated/runaway) — a LOUD
@@ -309,8 +375,20 @@ export async function extract({ canonical, prevState, personaName, cfg, signal, 
     const results = await Promise.all(LANE_ORDER.map((lane) => callOne(SHORT_PASS_PROMPTS[lane])));
     let delta = {};
     for (const r of results) delta = deepMergeDelta(delta, r.delta);
+    // Interim repair: a compound take-off whose removal never arrived gets one
+    // extra worn-lane call on the take-off clause alone. Only fires when the prose
+    // shows something coming off AND nothing was removed, so ordinary turns cost
+    // nothing; only worn_remove is taken from the reply.
+    let repairRaw = null;
+    const clause = lacksRemoval(delta) ? takeoffClause(canonical) : null;
+    if (clause) {
+        const repair = await callOne(SHORT_PASS_PROMPTS.worn, clause);
+        repairRaw = repair.raw;
+        delta = mergeRemovals(delta, repair.delta);
+    }
     const parseFailed = results.some((r) => r.parseFailed);
-    const raw = LANE_ORDER.map((lane, i) => `[${lane}] ${results[i].raw ?? ''}`).join('\n');
+    const raw = LANE_ORDER.map((lane, i) => `[${lane}] ${results[i].raw ?? ''}`).join('\n')
+        + (repairRaw ? `\n[worn:takeoff-repair] ${repairRaw}` : '');
     const parsed = Object.fromEntries(LANE_ORDER.map((lane, i) => [lane, results[i].parsed]));
     // systemUsed = the five short prompts that ACTUALLY ran (labeled per lane), so the
     // Doctor reproducer shows the real 5-pass prompts, not a phantom mono prompt. §3b.
