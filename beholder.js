@@ -15189,21 +15189,22 @@ ${SHORT_PASS_PROMPTS[lane]}`).join("\n\n")
   function getAliasLookup() {
     return buildAliasLookup(getSettings().aliasBook, getCharOverrides().aliases);
   }
-  function stripModelMissing(delta) {
+  var MANUAL_ONLY_FLAGS = ["missing", "bare"];
+  function stripManualOnlyFlags(delta) {
     for (const char of Object.keys(delta || {})) {
       const body = delta[char] && delta[char].body;
       if (!body || typeof body !== "object") continue;
       for (const slot of Object.keys(body)) {
         const sd = body[slot];
         if (!sd || typeof sd !== "object") continue;
-        delete sd.missing;
+        for (const flag of MANUAL_ONLY_FLAGS) delete sd[flag];
         if (Object.keys(sd).length === 0) delete body[slot];
       }
     }
     return delta;
   }
   function mapCharacters(delta) {
-    return stripModelMissing(dropHidden(resolveAliases(delta, getAliasLookup()), getCharOverrides().hidden));
+    return stripManualOnlyFlags(dropHidden(resolveAliases(delta, getAliasLookup()), getCharOverrides().hidden));
   }
   function applyCharView(state) {
     const ov = getCharOverrides();
