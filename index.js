@@ -289,26 +289,31 @@ function getAliasLookup() {
 
 // The host hook the engine calls on every incoming delta: collapse alias variants
 // onto their canonical key, then drop hidden characters so they aren't re-added.
-// DEMO: model-derived `missing` (severed/amputated limbs) misfires too often to ship, so strip it
-// from EVERY model delta — `missing` is MANUAL-ONLY now. mapCharacters is the pre-apply chokepoint
-// for both live message extraction (engine.js) and the card seed (seedFromCards), while the slot
-// editor writes state directly and note-box directives take their own path — so those manual
-// sources keep working. Drops the flag wherever it appears; a slot left empty by it is removed.
-function stripModelMissing(delta) {
+// Model-derived `missing` (severed/amputated limbs) and `bare` are MANUAL-ONLY: both
+// misfire more often than they land, and both are destructive when wrong — `missing`
+// dominates a slot outright, `bare` contradicts whatever is worn there. Measured on the
+// OOD eval set, `bare` scored 3 right against 5 wrong and 12 missed, and `missing` was
+// never emitted at all, so nothing of value is lost by refusing them.
+// mapCharacters is the pre-apply chokepoint for both live message extraction (engine.js)
+// and the card seed (seedFromCards), while the slot editor writes state directly and
+// note-box directives take their own path — so those manual sources keep working.
+// Drops the flags wherever they appear; a slot left empty by it is removed.
+const MANUAL_ONLY_FLAGS = ['missing', 'bare'];
+function stripManualOnlyFlags(delta) {
     for (const char of Object.keys(delta || {})) {
         const body = delta[char] && delta[char].body;
         if (!body || typeof body !== 'object') continue;
         for (const slot of Object.keys(body)) {
             const sd = body[slot];
             if (!sd || typeof sd !== 'object') continue;
-            delete sd.missing;
+            for (const flag of MANUAL_ONLY_FLAGS) delete sd[flag];
             if (Object.keys(sd).length === 0) delete body[slot];
         }
     }
     return delta;
 }
 function mapCharacters(delta) {
-    return stripModelMissing(dropHidden(resolveAliases(delta, getAliasLookup()), getCharOverrides().hidden));
+    return stripManualOnlyFlags(dropHidden(resolveAliases(delta, getAliasLookup()), getCharOverrides().hidden));
 }
 
 // Order + filter the running state for DISPLAY (persona first, hidden removed).
