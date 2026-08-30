@@ -10476,7 +10476,7 @@
       const cls = colorClass(row.color);
       return `<span class="bh-chip-swatch ${cls}" title="color: ${escapeHtml(row.color)}"></span>`;
     };
-    const colorTitle = (row) => row.color ? ` \xB7 color: ${row.color}` : "";
+    const colorTitle = (row) => row.color ? ` \xB7 color: ${escapeHtml(row.color)}` : "";
     const multiSlot = (row) => {
       if (!row.slots || row.slots.length <= 1) return "";
       const list = row.slots.map((s) => labelOf(s, family)).join(", ");
@@ -10513,13 +10513,13 @@
       }
       if (row.kind === "holding") {
         const meta2 = damageMeta(row.damage);
-        const dmgTitle2 = row.damage ? ` \xB7 ${meta2.label}` : "";
+        const dmgTitle2 = row.damage ? ` \xB7 ${escapeHtml(meta2.label)}` : "";
         return `<span class="bh-chip bh-chip-hold ${meta2.class}" title="held${dmgTitle2}${colorTitle(row)}">
                 <span class="bh-chip-head"><span class="bh-chip-dot"></span><span class="bh-chip-glyph">\u2726</span>${colorSwatch(row)}<span class="bh-chip-text">${escapeHtml(row.item)}</span>${multiSlot(row)}</span>${verboseRow([dmgLabel(row.damage), colorLabel(row)])}
             </span>`;
       }
       const meta = damageMeta(row.damage);
-      const dmgTitle = row.damage ? ` \xB7 ${meta.label}` : "";
+      const dmgTitle = row.damage ? ` \xB7 ${escapeHtml(meta.label)}` : "";
       return `<span class="bh-chip ${meta.class}" title="worn${dmgTitle}${colorTitle(row)}">
             <span class="bh-chip-head"><span class="bh-chip-dot"></span>${colorSwatch(row)}<span class="bh-chip-text">${escapeHtml(row.item)}</span>${multiSlot(row)}</span>${verboseRow([dmgLabel(row.damage), colorLabel(row)])}
         </span>`;
