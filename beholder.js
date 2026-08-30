@@ -12133,15 +12133,60 @@ ${canonical}`);
     }
     return dst;
   }
+  var TAKEOFF_CUE = new RegExp(
+    String.raw`\b(takes?|took|pulls?|pulled|peels?|peeled|kicks?|kicked|strips?|stripped|shrugs?|shrugged|slips?|slipped)\b[^.]{0,24}\b(off|out of)\b` + String.raw`|\b(unbuckles?|unbuttons?|unzips?|removes?|removed|discards?|drops?|dropped|hangs?|hung|sheds?|doffs?)\b`,
+    "i"
+  );
+  function takeoffClause(prose) {
+    const text = String(prose || "");
+    if (!TAKEOFF_CUE.test(text)) return null;
+    const clauses = text.split(/,?\s+\band\b\s+/);
+    if (clauses.length < 2) return null;
+    const index = clauses.findIndex((c) => TAKEOFF_CUE.test(c));
+    if (index === -1) return null;
+    let clause = clauses[index].trim();
+    if (index > 0 && !/^[A-Z]/.test(clause)) {
+      const subject = clauses[0].trim().split(/\s+/)[0];
+      if (subject) clause = `${subject} ${clause}`;
+    }
+    return /[.!?]$/.test(clause) ? clause : `${clause}.`;
+  }
+  function lacksRemoval(delta) {
+    for (const character of Object.values(delta || {})) {
+      const body = character && typeof character === "object" ? character.body : null;
+      for (const slot of Object.values(body || {})) {
+        if (slot && typeof slot === "object" && Array.isArray(slot.worn_remove) && slot.worn_remove.length) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+  function mergeRemovals(delta, repair) {
+    for (const [name, character] of Object.entries(repair || {})) {
+      const body = character && typeof character === "object" ? character.body : null;
+      for (const [slot, data] of Object.entries(body || {})) {
+        const removals = data && typeof data === "object" ? data.worn_remove : null;
+        if (!Array.isArray(removals) || removals.length === 0) continue;
+        delta[name] = delta[name] || {};
+        delta[name].body = delta[name].body || {};
+        delta[name].body[slot] = delta[name].body[slot] || {};
+        const existing = delta[name].body[slot].worn_remove;
+        delta[name].body[slot].worn_remove = [.../* @__PURE__ */ new Set([...Array.isArray(existing) ? existing : [], ...removals])];
+      }
+    }
+    return delta;
+  }
   async function extract({ canonical, prevState, personaName: personaName2, cfg, signal, transport, maxTokens = EXTRACT_MAX_TOKENS }) {
     const user = buildUserMessage(canonical, prevState, personaName2);
-    const callOne = async (system) => {
-      const raw2 = transport ? await transport.chatCompletion({ system, user, temperature: EXTRACT_TEMPERATURE, maxTokens, signal }) : await callChatCompletions({
+    const callOne = async (system, narrationOverride = null) => {
+      const message = narrationOverride ? buildUserMessage(narrationOverride, prevState, personaName2) : user;
+      const raw2 = transport ? await transport.chatCompletion({ system, user: message, temperature: EXTRACT_TEMPERATURE, maxTokens, signal }) : await callChatCompletions({
         endpoint: cfg.endpoint,
         model: cfg.model,
         apiKey: cfg.apiKey,
         system,
-        user,
+        user: message,
         temperature: EXTRACT_TEMPERATURE,
         maxTokens,
         signal
@@ -12161,8 +12206,16 @@ ${canonical}`);
     const results = await Promise.all(LANE_ORDER.map((lane) => callOne(SHORT_PASS_PROMPTS[lane])));
     let delta = {};
     for (const r of results) delta = deepMergeDelta(delta, r.delta);
+    let repairRaw = null;
+    const clause = lacksRemoval(delta) ? takeoffClause(canonical) : null;
+    if (clause) {
+      const repair = await callOne(SHORT_PASS_PROMPTS.worn, clause);
+      repairRaw = repair.raw;
+      delta = mergeRemovals(delta, repair.delta);
+    }
     const parseFailed = results.some((r) => r.parseFailed);
-    const raw = LANE_ORDER.map((lane, i) => `[${lane}] ${results[i].raw ?? ""}`).join("\n");
+    const raw = LANE_ORDER.map((lane, i) => `[${lane}] ${results[i].raw ?? ""}`).join("\n") + (repairRaw ? `
+[worn:takeoff-repair] ${repairRaw}` : "");
     const parsed = Object.fromEntries(LANE_ORDER.map((lane, i) => [lane, results[i].parsed]));
     return {
       raw,
